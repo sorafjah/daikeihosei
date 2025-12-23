@@ -23,21 +23,6 @@
 
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
-        // Lucideアイコンのコンポーネント化
-        const Icon = ({ name, size = 20, className = "" }) => {
-            const [svg, setSvg] = useState("");
-            useEffect(() => {
-                const icon = lucide.icons[name];
-                if (icon) {
-                    const svgString = lucide.createIcons({
-                        icons: { [name]: icon },
-                        attrs: { strokeWidth: 2, width: size, height: size, class: className }
-                    });
-                }
-                // シンプルにlucide.createIconsを後で呼ぶ形にするため、ここではプレースホルダー
-            }, []);
-            return <i data-lucide={name} className={className} style={{width: size, height: size}}></i>;
-        };
 
         const App = () => {
             const [image, setImage] = useState(null);
@@ -51,6 +36,7 @@
             const containerRef = useRef(null);
             const imgRef = useRef(null);
 
+            // アイコンの初期化
             useEffect(() => {
                 lucide.createIcons();
             }, [image, resultImage, isProcessing]);
@@ -282,6 +268,8 @@
                                         <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
                                             <polygon 
                                                 points={points.map(p => {
+                                                    // imgRef.current が null の場合は計算をスキップ
+                                                    if (!imgRef.current) return "0,0";
                                                     const rect = imgRef.current.getBoundingClientRect();
                                                     return `${(p.x / imgSize.width) * rect.width},${(p.y / imgSize.height) * rect.height}`;
                                                 }).join(' ')}
@@ -289,11 +277,16 @@
                                             />
                                         </svg>
                                         {points.map((p, i) => {
+                                            // imgRef.current がまだ無い場合は表示しない
+                                            if (!imgRef.current) return null;
                                             const rect = imgRef.current.getBoundingClientRect();
                                             return (
                                                 <div key={i} onMouseDown={(e) => handleStart(e, i)} onTouchStart={(e) => handleStart(e, i)}
                                                     className="absolute w-10 h-10 -ml-5 -mt-5 flex items-center justify-center cursor-grab active:cursor-grabbing z-20"
-                                                    style={{ left: (p.x / imgSize.width) * rect.width, top: (p.y / imgSize.height) * rect.height }}
+                                                    style={{ 
+                                                        left: (p.x / imgSize.width) * rect.width, 
+                                                        top: (p.y / imgSize.height) * rect.height 
+                                                    }}
                                                 >
                                                     <div className="w-6 h-6 bg-white border-2 border-blue-600 rounded-full shadow-md flex items-center justify-center">
                                                         <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
