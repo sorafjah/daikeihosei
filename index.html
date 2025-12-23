@@ -27,6 +27,7 @@
         const App = () => {
             const [image, setImage] = useState(null);
             const [imgSize, setImgSize] = useState({ width: 0, height: 0 });
+            const [displayRect, setDisplayRect] = useState(null); // 画像の表示サイズ管理用
             const [points, setPoints] = useState([]); 
             const [draggingIdx, setDraggingIdx] = useState(null);
             const [resultImage, setResultImage] = useState(null);
@@ -39,7 +40,20 @@
             // アイコンの初期化
             useEffect(() => {
                 lucide.createIcons();
-            }, [image, resultImage, isProcessing]);
+            }, [image, resultImage, isProcessing, displayRect]);
+
+            // 画像の表示サイズを更新する関数
+            const updateDisplayRect = useCallback(() => {
+                if (imgRef.current) {
+                    setDisplayRect(imgRef.current.getBoundingClientRect());
+                }
+            }, []);
+
+            // 画面サイズ変更時にも座標を再計算
+            useEffect(() => {
+                window.addEventListener('resize', updateDisplayRect);
+                return () => window.removeEventListener('resize', updateDisplayRect);
+            }, [updateDisplayRect]);
 
             const handleImageLoad = (src) => {
                 setError(null);
@@ -57,6 +71,7 @@
                         { x: w * 0.15, y: h * 0.85 },
                     ]);
                     setResultImage(null);
+                    setDisplayRect(null); // 一旦リセット
                 };
                 img.onerror = () => setError("画像の読み込みに失敗しました。");
                 img.src = src;
@@ -87,37 +102,30 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, []);
 
-            const getMapping = useCallback(() => {
-                if (!imgRef.current || !imgSize.width) return null;
-                const rect = imgRef.current.getBoundingClientRect();
-                return {
-                    scaleX: imgSize.width / rect.width,
-                    scaleY: imgSize.height / rect.height,
-                    left: rect.left,
-                    top: rect.top
-                };
-            }, [imgSize]);
-
             const handleStart = (e, idx) => {
                 if (e.cancelable) e.preventDefault();
                 setDraggingIdx(idx);
             };
 
             const handleMove = useCallback((e) => {
-                if (draggingIdx === null || !image) return;
-                const mapping = getMapping();
-                if (!mapping) return;
+                if (draggingIdx === null || !image || !displayRect) return;
+                
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                const x = (clientX - mapping.left) * mapping.scaleX;
-                const y = (clientY - mapping.top) * mapping.scaleY;
+
+                const scaleX = imgSize.width / displayRect.width;
+                const scaleY = imgSize.height / displayRect.height;
+
+                const x = (clientX - displayRect.left) * scaleX;
+                const y = (clientY - displayRect.top) * scaleY;
+
                 const newPoints = [...points];
                 newPoints[draggingIdx] = {
                     x: Math.max(0, Math.min(imgSize.width, x)),
                     y: Math.max(0, Math.min(imgSize.height, y))
                 };
                 setPoints(newPoints);
-            }, [draggingIdx, points, imgSize, image, getMapping]);
+            }, [draggingIdx, points, imgSize, image, displayRect]);
 
             const handleEnd = () => setDraggingIdx(null);
 
@@ -264,36 +272,38 @@
                                     </div>
                                 ) : (
                                     <div className="relative inline-block max-w-full max-h-full">
-                                        <img ref={imgRef} src={image.src} className="max-w-full max-h-[60vh] block object-contain shadow-sm" />
-                                        <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
-                                            <polygon 
-                                                points={points.map(p => {
-                                                    // imgRef.current が null の場合は計算をスキップ
-                                                    if (!imgRef.current) return "0,0";
-                                                    const rect = imgRef.current.getBoundingClientRect();
-                                                    return `${(p.x / imgSize.width) * rect.width},${(p.y / imgSize.height) * rect.height}`;
-                                                }).join(' ')}
-                                                fill="rgba(37, 99, 235, 0.1)" stroke="#2563eb" strokeWidth="2"
-                                            />
-                                        </svg>
-                                        {points.map((p, i) => {
-                                            // imgRef.current がまだ無い場合は表示しない
-                                            if (!imgRef.current) return null;
-                                            const rect = imgRef.current.getBoundingClientRect();
-                                            return (
-                                                <div key={i} onMouseDown={(e) => handleStart(e, i)} onTouchStart={(e) => handleStart(e, i)}
-                                                    className="absolute w-10 h-10 -ml-5 -mt-5 flex items-center justify-center cursor-grab active:cursor-grabbing z-20"
-                                                    style={{ 
-                                                        left: (p.x / imgSize.width) * rect.width, 
-                                                        top: (p.y / imgSize.height) * rect.height 
-                                                    }}
-                                                >
-                                                    <div className="w-6 h-6 bg-white border-2 border-blue-600 rounded-full shadow-md flex items-center justify-center">
-                                                        <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
+                                        <img 
+                                            ref={imgRef} 
+                                            src={image.src} 
+                                            onLoad={updateDisplayRect}
+                                            className="max-w-full max-h-[60vh] block object-contain shadow-sm" 
+                                        />
+                                        
+                                        {displayRect && (
+                                            <React.Fragment>
+                                                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
+                                                    <polygon 
+                                                        points={points.map(p => {
+                                                            return `${(p.x / imgSize.width) * displayRect.width},${(p.y / imgSize.height) * displayRect.height}`;
+                                                        }).join(' ')}
+                                                        fill="rgba(37, 99, 235, 0.1)" stroke="#2563eb" strokeWidth="2"
+                                                    />
+                                                </svg>
+                                                {points.map((p, i) => (
+                                                    <div key={i} onMouseDown={(e) => handleStart(e, i)} onTouchStart={(e) => handleStart(e, i)}
+                                                        className="absolute w-10 h-10 -ml-5 -mt-5 flex items-center justify-center cursor-grab active:cursor-grabbing z-20"
+                                                        style={{ 
+                                                            left: (p.x / imgSize.width) * displayRect.width, 
+                                                            top: (p.y / imgSize.height) * displayRect.height 
+                                                        }}
+                                                    >
+                                                        <div className="w-6 h-6 bg-white border-2 border-blue-600 rounded-full shadow-md flex items-center justify-center">
+                                                            <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                ))}
+                                            </React.Fragment>
+                                        )}
                                     </div>
                                 )}
                             </div>
