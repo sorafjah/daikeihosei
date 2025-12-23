@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>台形補正アプリ（改良版）</title>
+  <title>台形補正アプリ（改良版・安定）</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -14,9 +14,6 @@
 
   <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
     body { background-color: #f8fafc; }
@@ -30,15 +27,101 @@
     const { useState, useRef, useEffect, useCallback, useMemo } = React;
 
     // ====== 設定（重い写真対策） ======
-    const MAX_SIDE = 2048;      // 読み込んだ画像をこの最大辺まで縮小して扱う
-    const MIN_AREA_RATIO = 0.0003; // 4点の面積が画像に対してこれより小さいと「潰れてる」と判定
+    const MAX_SIDE = 2048;          // 入力画像の最大辺（これ以上は縮小して扱う）
+    const OUT_MAX_SIDE = 2400;      // 出力の最大辺（必要なら抑える）
+    const MIN_AREA_RATIO = 0.0003;  // 4点面積が画像面積に対して小さすぎるとNG
+    const TOUCH_MOVE_OPTS = { passive: false }; // add/remove で同じ参照が必要
 
-    // touchmove add/remove の options は「同じ参照」を使う必要がある
-    const TOUCH_MOVE_OPTS = { passive: false };
+    // ====== ちいさいSVGアイコン（Lucide無し） ======
+    const Icon = ({ name, className = "" }) => {
+      const common = "inline-block align-middle";
+      const props = {
+        className: `${common} ${className}`,
+        viewBox: "0 0 24 24",
+        width: "1em",
+        height: "1em",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        "aria-hidden": "true",
+      };
 
+      // ※見た目用の簡易パス（本家Lucideと完全一致でなくてOKならこれで安定）
+      switch (name) {
+        case "move":
+          return (
+            <svg {...props}>
+              <path d="M12 2v20" />
+              <path d="M2 12h20" />
+              <path d="M12 2l3 3" />
+              <path d="M12 2L9 5" />
+              <path d="M12 22l3-3" />
+              <path d="M12 22l-3-3" />
+              <path d="M2 12l3-3" />
+              <path d="M2 12l3 3" />
+              <path d="M22 12l-3-3" />
+              <path d="M22 12l-3 3" />
+            </svg>
+          );
+        case "upload":
+          return (
+            <svg {...props}>
+              <path d="M12 16V4" />
+              <path d="M8 8l4-4 4 4" />
+              <path d="M4 20h16" />
+            </svg>
+          );
+        case "clipboard":
+          return (
+            <svg {...props}>
+              <rect x="7" y="4" width="10" height="16" rx="2" />
+              <path d="M9 4V3h6v1" />
+            </svg>
+          );
+        case "refresh":
+          return (
+            <svg {...props}>
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 3v6h-6" />
+            </svg>
+          );
+        case "square":
+          return (
+            <svg {...props}>
+              <rect x="5" y="5" width="14" height="14" rx="2" />
+            </svg>
+          );
+        case "check":
+          return (
+            <svg {...props}>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8 12l2.5 2.5L16 9" />
+            </svg>
+          );
+        case "download":
+          return (
+            <svg {...props}>
+              <path d="M12 3v12" />
+              <path d="M8 11l4 4 4-4" />
+              <path d="M4 21h16" />
+            </svg>
+          );
+        case "pointer":
+          return (
+            <svg {...props}>
+              <path d="M5 3l7 17 2-6 6-2L5 3z" />
+            </svg>
+          );
+        default:
+          return null;
+      }
+    };
+
+    // ====== util ======
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-    // 4点の多角形面積（shoelace）
     function polygonArea(pts) {
       let a = 0;
       for (let i = 0; i < pts.length; i++) {
@@ -48,14 +131,12 @@
       return Math.abs(a) / 2;
     }
 
-    // 画像を最大辺 MAX_SIDE に縮小（必要な場合のみ）
     async function loadAndDownscaleImage(src) {
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          const w = img.width;
-          const h = img.height;
+          const w = img.width, h = img.height;
           const maxSide = Math.max(w, h);
 
           if (maxSide <= MAX_SIDE) {
@@ -68,8 +149,7 @@
           const nh = Math.round(h * scale);
 
           const c = document.createElement("canvas");
-          c.width = nw;
-          c.height = nh;
+          c.width = nw; c.height = nh;
           const ctx = c.getContext("2d");
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
@@ -86,7 +166,6 @@
     }
 
     function getPerspectiveTransform(src, dst) {
-      // 8x9 の連立（最後の係数を1に固定）
       const p = [];
       for (let i = 0; i < 4; i++) {
         p.push([src[i].x, src[i].y, 1, 0, 0, 0, -dst[i].x * src[i].x, -dst[i].x * src[i].y, dst[i].x]);
@@ -137,7 +216,7 @@
       };
     }
 
-    // バイリニア補間（保存品質UP用）
+    // バイリニア補間
     function sampleBilinear(srcData, sw, sh, x, y) {
       const x0 = Math.floor(x), y0 = Math.floor(y);
       const x1 = x0 + 1, y1 = y0 + 1;
@@ -151,7 +230,6 @@
       }
 
       const c00 = get(x0, y0), c10 = get(x1, y0), c01 = get(x0, y1), c11 = get(x1, y1);
-
       const out = [0, 0, 0, 0];
       for (let k = 0; k < 4; k++) {
         const a = c00[k] * (1 - fx) + c10[k] * fx;
@@ -171,19 +249,13 @@
       const [draggingIdx, setDraggingIdx] = useState(null);
 
       const [resultImage, setResultImage] = useState(null);
-      const [isProcessing, setIsProcessing] = useState(false);
+      const [isBusy, setIsBusy] = useState(false);
       const [error, setError] = useState(null);
 
       const imgRef = useRef(null);
 
-      useEffect(() => {
-        lucide.createIcons();
-      }, [image, resultImage, isProcessing, displayRect, error, wasScaled]);
-
       const updateDisplayRect = useCallback(() => {
-        if (imgRef.current) {
-          setDisplayRect(imgRef.current.getBoundingClientRect());
-        }
+        if (imgRef.current) setDisplayRect(imgRef.current.getBoundingClientRect());
       }, []);
 
       useEffect(() => {
@@ -202,7 +274,7 @@
 
       const handleImageLoad = useCallback(async (src) => {
         setError(null);
-        setIsProcessing(true);
+        setIsBusy(true);
         setResultImage(null);
         setDisplayRect(null);
 
@@ -219,7 +291,7 @@
           setWasScaled(false);
           setPoints([]);
         } finally {
-          setIsProcessing(false);
+          setIsBusy(false);
         }
       }, [initPoints]);
 
@@ -253,7 +325,7 @@
 
       const handleStart = (e, idx) => {
         if (e.cancelable) e.preventDefault();
-        updateDisplayRect();       // ★ズレ防止：ドラッグ開始時にも更新
+        updateDisplayRect(); // ズレ防止
         setDraggingIdx(idx);
       };
 
@@ -271,10 +343,7 @@
 
         setPoints(prev => {
           const next = [...prev];
-          next[draggingIdx] = {
-            x: clamp(x, 0, imgSize.width),
-            y: clamp(y, 0, imgSize.height),
-          };
+          next[draggingIdx] = { x: clamp(x, 0, imgSize.width), y: clamp(y, 0, imgSize.height) };
           return next;
         });
       }, [draggingIdx, image, displayRect, imgSize]);
@@ -285,37 +354,32 @@
         if (draggingIdx !== null) {
           window.addEventListener("mousemove", handleMove);
           window.addEventListener("mouseup", handleEnd);
-          window.addEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS); // ★同じ参照
+          window.addEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS);
           window.addEventListener("touchend", handleEnd);
         }
         return () => {
           window.removeEventListener("mousemove", handleMove);
           window.removeEventListener("mouseup", handleEnd);
-          window.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS); // ★同じ参照
+          window.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS);
           window.removeEventListener("touchend", handleEnd);
         };
       }, [draggingIdx, handleMove]);
 
-      const polygonPointsPx = useMemo(() => points, [points]);
-
       const validatePoints = useCallback(() => {
         if (!image || points.length !== 4) return { ok: false, message: "画像がありません。" };
 
-        // 点の面積が小さすぎる＝潰れてる
         const area = polygonArea(points);
         const imgArea = imgSize.width * imgSize.height;
         if (!isFinite(area) || area / imgArea < MIN_AREA_RATIO) {
-          return { ok: false, message: "四角形が小さすぎます。青い点をもっと四隅に広げてください。" };
+          return { ok: false, message: "四角形が小さすぎます。青い点を四隅に広げてください。" };
         }
 
-        // 4点が重なりすぎもNG
         for (let i = 0; i < 4; i++) {
           for (let j = i + 1; j < 4; j++) {
             const dx = points[i].x - points[j].x;
             const dy = points[i].y - points[j].y;
-            const dist2 = dx*dx + dy*dy;
-            if (dist2 < 16) {
-              return { ok: false, message: "点が近すぎます。4つの点が重ならないように動かしてください。" };
+            if (dx*dx + dy*dy < 16) {
+              return { ok: false, message: "点が近すぎます。点が重ならないように動かしてください。" };
             }
           }
         }
@@ -327,14 +391,12 @@
         const v = validatePoints();
         if (!v.ok) { setError(v.message); return; }
 
-        setIsProcessing(true);
+        setIsBusy(true);
         setError(null);
 
-        // UIを止めにくくする（少しだけ待ってから重い処理）
         await new Promise(r => setTimeout(r, 30));
 
         try {
-          // 出力サイズ（4辺の長い方）
           const w1 = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
           const w2 = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
           const h1 = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
@@ -343,8 +405,6 @@
           let destW = Math.max(1, Math.round(Math.max(w1, w2)));
           let destH = Math.max(1, Math.round(Math.max(h1, h2)));
 
-          // 出力がデカすぎると保存も重いので、必要なら少し抑える（任意）
-          const OUT_MAX_SIDE = 2400;
           const outMaxSide = Math.max(destW, destH);
           if (outMaxSide > OUT_MAX_SIDE) {
             const s = OUT_MAX_SIDE / outMaxSide;
@@ -352,12 +412,6 @@
             destH = Math.round(destH * s);
           }
 
-          const canvas = document.createElement("canvas");
-          canvas.width = destW;
-          canvas.height = destH;
-          const ctx = canvas.getContext("2d");
-
-          // 元画像のピクセル取得
           const tempCanvas = document.createElement("canvas");
           tempCanvas.width = imgSize.width;
           tempCanvas.height = imgSize.height;
@@ -367,29 +421,27 @@
           const srcImg = tCtx.getImageData(0, 0, imgSize.width, imgSize.height);
           const srcData = srcImg.data;
 
-          // 変換行列
           const transform = getPerspectiveTransform(
             points,
             [{x:0,y:0}, {x:destW,y:0}, {x:destW,y:destH}, {x:0,y:destH}]
           );
 
+          const canvas = document.createElement("canvas");
+          canvas.width = destW;
+          canvas.height = destH;
+          const ctx = canvas.getContext("2d");
           const outImg = ctx.createImageData(destW, destH);
           const d = outImg.data;
 
-          // ★保存品質UP：バイリニア補間
           for (let y = 0; y < destH; y++) {
             for (let x = 0; x < destW; x++) {
-              const srcPos = mapPoint(x, y, transform.inv);
-              const sx = srcPos.x;
-              const sy = srcPos.y;
+              const sp = mapPoint(x, y, transform.inv);
+              const sx = sp.x, sy = sp.y;
 
               if (sx >= 0 && sx < imgSize.width && sy >= 0 && sy < imgSize.height) {
                 const [r,g,b,a] = sampleBilinear(srcData, imgSize.width, imgSize.height, sx, sy);
                 const outIdx = (y * destW + x) * 4;
-                d[outIdx]     = r;
-                d[outIdx + 1] = g;
-                d[outIdx + 2] = b;
-                d[outIdx + 3] = a;
+                d[outIdx] = r; d[outIdx+1] = g; d[outIdx+2] = b; d[outIdx+3] = a;
               }
             }
           }
@@ -402,7 +454,7 @@
             : "補正できませんでした。";
           setError(msg);
         } finally {
-          setIsProcessing(false);
+          setIsBusy(false);
         }
       };
 
@@ -417,7 +469,7 @@
       return (
         <div className="min-h-screen flex flex-col p-4 font-sans text-slate-800">
           <header className="mb-6 text-center">
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">台形補正アプリ（改良版）</h1>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">台形補正アプリ（改良版・安定）</h1>
             <p className="text-slate-500 mt-1">斜めに写った書類をまっすぐに整えます</p>
             {wasScaled && (
               <p className="mt-2 text-xs text-slate-500">
@@ -430,10 +482,10 @@
             <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
               <div className="flex justify-between items-center mb-5 gap-3">
                 <h2 className="font-bold text-lg text-blue-600 flex items-center gap-2">
-                  <i data-lucide="move"></i>範囲を指定
+                  <Icon name="move" className="w-5 h-5" /> 範囲を指定
                 </h2>
                 <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-semibold">
-                  <i data-lucide="upload"></i>画像を選択
+                  <Icon name="upload" className="w-4 h-4" /> 画像を選択
                   <input type="file" className="hidden" accept="image/*" onChange={onFileChange} />
                 </label>
               </div>
@@ -441,7 +493,9 @@
               <div className="relative flex-1 bg-slate-100 rounded-xl overflow-hidden min-h-[400px] flex items-center justify-center select-none border border-slate-200 touch-none">
                 {!image ? (
                   <div className="text-center text-slate-400 p-10">
-                    <i data-lucide="clipboard" className="mx-auto mb-4 opacity-20" style={{width: 48, height: 48}}></i>
+                    <div className="mx-auto mb-4 opacity-25 text-slate-500" style={{ fontSize: 48 }}>
+                      <Icon name="clipboard" className="w-12 h-12" />
+                    </div>
                     <p className="font-semibold text-slate-500">画像をここに貼り付け（Ctrl+V など）</p>
                   </div>
                 ) : (
@@ -474,7 +528,7 @@
                             style={{
                               left: (p.x / imgSize.width) * displayRect.width,
                               top: (p.y / imgSize.height) * displayRect.height,
-                              touchAction: "none", // ★iOS誤スクロール減
+                              touchAction: "none",
                             }}
                             aria-label={`handle-${i}`}
                           >
@@ -498,11 +552,13 @@
               <div className="mt-6">
                 <button
                   onClick={processImage}
-                  disabled={!image || isProcessing}
+                  disabled={!image || isBusy}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-lg"
                 >
-                  <i data-lucide={isProcessing ? "refresh-cw" : "square"} className={isProcessing ? "animate-spin" : ""}></i>
-                  {isProcessing ? "補正中..." : "この範囲で長方形に整える"}
+                  {isBusy
+                    ? <span className="inline-flex items-center gap-2"><span className="animate-spin"><Icon name="refresh" className="w-5 h-5" /></span> 補正中...</span>
+                    : <span className="inline-flex items-center gap-2"><Icon name="square" className="w-5 h-5" /> この範囲で長方形に整える</span>
+                  }
                 </button>
               </div>
             </div>
@@ -510,7 +566,7 @@
             <div className="flex-1 flex flex-col gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col flex-1">
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700">
-                  <i data-lucide="check-circle"></i>補正結果
+                  <Icon name="check" className="w-5 h-5" /> 補正結果
                 </h2>
 
                 <div className="flex-1 bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center border-2 border-dashed border-slate-200 relative min-h-[200px]">
@@ -525,7 +581,7 @@
                   onClick={downloadResult}
                   className="mt-4 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 shadow-sm"
                 >
-                  <i data-lucide="download"></i>保存する
+                  <Icon name="download" className="w-5 h-5" /> 保存する
                 </button>
 
                 {resultImage && <p className="mt-2 text-[10px] text-slate-400 text-center">※iPhoneは画像を長押しでカメラロールに保存</p>}
@@ -533,7 +589,7 @@
 
               <div className="bg-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
                 <h3 className="font-bold text-sm mb-4 flex items-center gap-2 text-slate-600">
-                  <i data-lucide="mouse-pointer-2"></i>使いかた
+                  <Icon name="pointer" className="w-4 h-4" /> 使いかた
                 </h3>
                 <ul className="text-xs space-y-4 text-slate-600">
                   <li className="flex gap-3">
