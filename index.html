@@ -1,440 +1,351 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Upload, Download, Square, Move, Scissors, Clipboard, RefreshCw, Image as ImageIcon, Sparkles, CheckCircle, MousePointer2 } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台形補正アプリ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { background-color: #f8fafc; }
+        .touch-none { touch-action: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-const App = () => {
-  const [image, setImage] = useState(null);
-  const [imgSize, setImgSize] = useState({ width: 0, height: 0 });
-  const [points, setPoints] = useState([]); // [{x, y}, ...] - Image pixel coordinates
-  const [draggingIdx, setDraggingIdx] = useState(null);
-  const [resultImage, setResultImage] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
+    <script type="text/babel">
+        const { useState, useRef, useEffect, useCallback } = React;
+        // Lucideアイコンのコンポーネント化
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const [svg, setSvg] = useState("");
+            useEffect(() => {
+                const icon = lucide.icons[name];
+                if (icon) {
+                    const svgString = lucide.createIcons({
+                        icons: { [name]: icon },
+                        attrs: { strokeWidth: 2, width: size, height: size, class: className }
+                    });
+                }
+                // シンプルにlucide.createIconsを後で呼ぶ形にするため、ここではプレースホルダー
+            }, []);
+            return <i data-lucide={name} className={className} style={{width: size, height: size}}></i>;
+        };
 
-  const containerRef = useRef(null);
-  const imgRef = useRef(null);
+        const App = () => {
+            const [image, setImage] = useState(null);
+            const [imgSize, setImgSize] = useState({ width: 0, height: 0 });
+            const [points, setPoints] = useState([]); 
+            const [draggingIdx, setDraggingIdx] = useState(null);
+            const [resultImage, setResultImage] = useState(null);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [error, setError] = useState(null);
 
-  // Load image helper
-  const handleImageLoad = (src) => {
-    setError(null);
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      setImage(img);
-      const w = img.width;
-      const h = img.height;
-      setImgSize({ width: w, height: h });
-      
-      // Initial points as 15% margin from edges
-      setPoints([
-        { x: w * 0.15, y: h * 0.15 }, // Top-Left
-        { x: w * 0.85, y: h * 0.15 }, // Top-Right
-        { x: w * 0.85, y: h * 0.85 }, // Bottom-Right
-        { x: w * 0.15, y: h * 0.85 }, // Bottom-Left
-      ]);
-      setResultImage(null);
-    };
-    img.onerror = () => setError("画像の読み込みに失敗しました。形式を確認してください。");
-    img.src = src;
-  };
+            const containerRef = useRef(null);
+            const imgRef = useRef(null);
 
-  const onFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (f) => handleImageLoad(f.target.result);
-      reader.readAsDataURL(file);
-    }
-  };
+            useEffect(() => {
+                lucide.createIcons();
+            }, [image, resultImage, isProcessing]);
 
-  // Clipboard Paste Support
-  useEffect(() => {
-    const handlePaste = (e) => {
-      const items = e.clipboardData.items;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile();
-          const reader = new FileReader();
-          reader.onload = (f) => handleImageLoad(f.target.result);
-          reader.readAsDataURL(blob);
-        }
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+            const handleImageLoad = (src) => {
+                setError(null);
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    setImage(img);
+                    const w = img.width;
+                    const h = img.height;
+                    setImgSize({ width: w, height: h });
+                    setPoints([
+                        { x: w * 0.15, y: h * 0.15 },
+                        { x: w * 0.85, y: h * 0.15 },
+                        { x: w * 0.85, y: h * 0.85 },
+                        { x: w * 0.15, y: h * 0.85 },
+                    ]);
+                    setResultImage(null);
+                };
+                img.onerror = () => setError("画像の読み込みに失敗しました。");
+                img.src = src;
+            };
 
-  const getMapping = useCallback(() => {
-    if (!imgRef.current || !imgSize.width) return null;
-    const rect = imgRef.current.getBoundingClientRect();
-    return {
-      scaleX: imgSize.width / rect.width,
-      scaleY: imgSize.height / rect.height,
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height
-    };
-  }, [imgSize]);
+            const onFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (f) => handleImageLoad(f.target.result);
+                    reader.readAsDataURL(file);
+                }
+            };
 
-  const handleStart = (e, idx) => {
-    e.preventDefault();
-    setDraggingIdx(idx);
-  };
+            useEffect(() => {
+                const handlePaste = (e) => {
+                    const items = e.clipboardData.items;
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf('image') !== -1) {
+                            const blob = items[i].getAsFile();
+                            const reader = new FileReader();
+                            reader.onload = (f) => handleImageLoad(f.target.result);
+                            reader.readAsDataURL(blob);
+                        }
+                    }
+                };
+                window.addEventListener('paste', handlePaste);
+                return () => window.removeEventListener('paste', handlePaste);
+            }, []);
 
-  const handleMove = useCallback((e) => {
-    if (draggingIdx === null || !image) return;
-    const mapping = getMapping();
-    if (!mapping) return;
+            const getMapping = useCallback(() => {
+                if (!imgRef.current || !imgSize.width) return null;
+                const rect = imgRef.current.getBoundingClientRect();
+                return {
+                    scaleX: imgSize.width / rect.width,
+                    scaleY: imgSize.height / rect.height,
+                    left: rect.left,
+                    top: rect.top
+                };
+            }, [imgSize]);
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const handleStart = (e, idx) => {
+                if (e.cancelable) e.preventDefault();
+                setDraggingIdx(idx);
+            };
 
-    const x = (clientX - mapping.left) * mapping.scaleX;
-    const y = (clientY - mapping.top) * mapping.scaleY;
+            const handleMove = useCallback((e) => {
+                if (draggingIdx === null || !image) return;
+                const mapping = getMapping();
+                if (!mapping) return;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const x = (clientX - mapping.left) * mapping.scaleX;
+                const y = (clientY - mapping.top) * mapping.scaleY;
+                const newPoints = [...points];
+                newPoints[draggingIdx] = {
+                    x: Math.max(0, Math.min(imgSize.width, x)),
+                    y: Math.max(0, Math.min(imgSize.height, y))
+                };
+                setPoints(newPoints);
+            }, [draggingIdx, points, imgSize, image, getMapping]);
 
-    const newPoints = [...points];
-    newPoints[draggingIdx] = {
-      x: Math.max(0, Math.min(imgSize.width, x)),
-      y: Math.max(0, Math.min(imgSize.height, y))
-    };
-    setPoints(newPoints);
-  }, [draggingIdx, points, imgSize, image, getMapping]);
+            const handleEnd = () => setDraggingIdx(null);
 
-  const handleEnd = () => setDraggingIdx(null);
+            useEffect(() => {
+                if (draggingIdx !== null) {
+                    window.addEventListener('mousemove', handleMove);
+                    window.addEventListener('mouseup', handleEnd);
+                    window.addEventListener('touchmove', handleMove, { passive: false });
+                    window.addEventListener('touchend', handleEnd);
+                }
+                return () => {
+                    window.removeEventListener('mousemove', handleMove);
+                    window.removeEventListener('mouseup', handleEnd);
+                    window.removeEventListener('touchmove', handleMove);
+                    window.removeEventListener('touchend', handleEnd);
+                };
+            }, [draggingIdx, handleMove]);
 
-  useEffect(() => {
-    if (draggingIdx !== null) {
-      window.addEventListener('mousemove', handleMove);
-      window.addEventListener('mouseup', handleEnd);
-      window.addEventListener('touchmove', handleMove, { passive: false });
-      window.addEventListener('touchend', handleEnd);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleEnd);
-      window.removeEventListener('touchmove', handleMove);
-      window.removeEventListener('touchend', handleEnd);
-    };
-  }, [draggingIdx, handleMove]);
+            const processImage = () => {
+                if (!image) return;
+                setIsProcessing(true);
+                setError(null);
+                setTimeout(() => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const w1 = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+                        const w2 = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
+                        const h1 = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
+                        const h2 = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
+                        const destW = Math.round(Math.max(w1, w2));
+                        const destH = Math.round(Math.max(h1, h2));
+                        canvas.width = destW;
+                        canvas.height = destH;
+                        
+                        const transform = getPerspectiveTransform(points, [{x:0,y:0}, {x:destW,y:0}, {x:destW,y:destH}, {x:0,y:destH}]);
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = imgSize.width;
+                        tempCanvas.height = imgSize.height;
+                        const tCtx = tempCanvas.getContext('2d');
+                        tCtx.drawImage(image, 0, 0);
+                        const srcData = tCtx.getImageData(0, 0, imgSize.width, imgSize.height).data;
+                        const outData = ctx.createImageData(destW, destH);
+                        const d = outData.data;
 
-  // Perspective Transform Logic
-  const processImage = () => {
-    if (!image) return;
-    setIsProcessing(true);
-    setError(null);
+                        for (let y = 0; y < destH; y++) {
+                            for (let x = 0; x < destW; x++) {
+                                const srcPos = mapPoint(x, y, transform.inv);
+                                const sx = Math.floor(srcPos.x);
+                                const sy = Math.floor(srcPos.y);
+                                if (sx >= 0 && sx < imgSize.width && sy >= 0 && sy < imgSize.height) {
+                                    const outIdx = (y * destW + x) * 4;
+                                    const srcIdx = (sy * imgSize.width + sx) * 4;
+                                    d[outIdx] = srcData[srcIdx];
+                                    d[outIdx + 1] = srcData[srcIdx + 1];
+                                    d[outIdx + 2] = srcData[srcIdx + 2];
+                                    d[outIdx + 3] = srcData[srcIdx + 3];
+                                }
+                            }
+                        }
+                        ctx.putImageData(outData, 0, 0);
+                        setResultImage(canvas.toDataURL('image/png'));
+                    } catch (err) {
+                        setError("補正できませんでした。");
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }, 50);
+            };
 
-    setTimeout(() => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        const w1 = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
-        const w2 = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
-        const h1 = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
-        const h2 = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
-        
-        const destW = Math.round(Math.max(w1, w2));
-        const destH = Math.round(Math.max(h1, h2));
-
-        if (destW < 10 || destH < 10) throw new Error("範囲が小さすぎます。もっと広げてください。");
-
-        canvas.width = destW;
-        canvas.height = destH;
-
-        const transform = getPerspectiveTransform(points, [{x:0,y:0}, {x:destW,y:0}, {x:destW,y:destH}, {x:0,y:destH}]);
-
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = imgSize.width;
-        tempCanvas.height = imgSize.height;
-        const tCtx = tempCanvas.getContext('2d');
-        tCtx.drawImage(image, 0, 0);
-        const srcData = tCtx.getImageData(0, 0, imgSize.width, imgSize.height).data;
-
-        const outData = ctx.createImageData(destW, destH);
-        const d = outData.data;
-
-        for (let y = 0; y < destH; y++) {
-          for (let x = 0; x < destW; x++) {
-            const srcPos = mapPoint(x, y, transform.inv);
-            const sx = Math.floor(srcPos.x);
-            const sy = Math.floor(srcPos.y);
-
-            if (sx >= 0 && sx < imgSize.width && sy >= 0 && sy < imgSize.height) {
-              const outIdx = (y * destW + x) * 4;
-              const srcIdx = (sy * imgSize.width + sx) * 4;
-              d[outIdx] = srcData[srcIdx];
-              d[outIdx + 1] = srcData[srcIdx + 1];
-              d[outIdx + 2] = srcData[srcIdx + 2];
-              d[outIdx + 3] = srcData[srcIdx + 3];
+            function getPerspectiveTransform(src, dst) {
+                const p = [];
+                for (let i = 0; i < 4; i++) {
+                    p.push([src[i].x, src[i].y, 1, 0, 0, 0, -dst[i].x * src[i].x, -dst[i].x * src[i].y, dst[i].x]);
+                    p.push([0, 0, 0, src[i].x, src[i].y, 1, -dst[i].y * src[i].x, -dst[i].y * src[i].y, dst[i].y]);
+                }
+                const h = solveLinearEquations(p);
+                h.push(1);
+                return { mat: h, inv: invert3x3(h) };
             }
-          }
-        }
 
-        ctx.putImageData(outData, 0, 0);
-        setResultImage(canvas.toDataURL('image/png'));
-      } catch (err) {
-        setError(err.message || "補正中にエラーが発生しました。");
-      } finally {
-        setIsProcessing(false);
-      }
-    }, 50);
-  };
+            function solveLinearEquations(matrix) {
+                const n = 8;
+                for (let i = 0; i < n; i++) {
+                    let max = i;
+                    for (let j = i + 1; j < n; j++) {
+                        if (Math.abs(matrix[j][i]) > Math.abs(matrix[max][i])) max = j;
+                    }
+                    [matrix[i], matrix[max]] = [matrix[max], matrix[i]];
+                    const pivot = matrix[i][i];
+                    for (let j = i; j <= n; j++) matrix[i][j] /= pivot;
+                    for (let j = 0; j < n; j++) {
+                        if (i !== j) {
+                            const factor = matrix[j][i];
+                            for (let k = i; k <= n; k++) matrix[j][k] -= factor * matrix[i][k];
+                        }
+                    }
+                }
+                return matrix.map(row => row[n]);
+            }
 
-  function getPerspectiveTransform(src, dst) {
-    const p = [];
-    for (let i = 0; i < 4; i++) {
-      p.push([src[i].x, src[i].y, 1, 0, 0, 0, -dst[i].x * src[i].x, -dst[i].x * src[i].y, dst[i].x]);
-      p.push([0, 0, 0, src[i].x, src[i].y, 1, -dst[i].y * src[i].x, -dst[i].y * src[i].y, dst[i].y]);
-    }
-    const h = solveLinearEquations(p);
-    h.push(1);
-    return { mat: h, inv: invert3x3(h) };
-  }
+            function invert3x3(m) {
+                const [a, b, c, d, e, f, g, h, i] = m;
+                const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+                return [
+                    (e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
+                    (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
+                    (d * h - e * g) / det, (g * b - a * h) / det, (a * e - b * d) / det
+                ];
+            }
 
-  function solveLinearEquations(matrix) {
-    const n = 8;
-    for (let i = 0; i < n; i++) {
-      let max = i;
-      for (let j = i + 1; j < n; j++) {
-        if (Math.abs(matrix[j][i]) > Math.abs(matrix[max][i])) max = j;
-      }
-      [matrix[i], matrix[max]] = [matrix[max], matrix[i]];
-      const pivot = matrix[i][i];
-      if (Math.abs(pivot) < 1e-10) throw new Error("計算できませんでした。点を少し動かしてみてください。");
-      for (let j = i; j <= n; j++) matrix[i][j] /= pivot;
-      for (let j = 0; j < n; j++) {
-        if (i !== j) {
-          const factor = matrix[j][i];
-          for (let k = i; k <= n; k++) matrix[j][k] -= factor * matrix[i][k];
-        }
-      }
-    }
-    return matrix.map(row => row[n]);
-  }
+            function mapPoint(x, y, m) {
+                const w = m[6] * x + m[7] * y + m[8];
+                return {
+                    x: (m[0] * x + m[1] * y + m[2]) / w,
+                    y: (m[3] * x + m[4] * y + m[5]) / w
+                };
+            }
 
-  function invert3x3(m) {
-    const [a, b, c, d, e, f, g, h, i] = m;
-    const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-    return [
-      (e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
-      (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
-      (d * h - e * g) / det, (g * b - a * h) / det, (a * e - b * d) / det
-    ];
-  }
+            return (
+                <div className="min-h-screen flex flex-col p-4 font-sans text-slate-800">
+                    <header className="mb-6 text-center">
+                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">台形補正アプリ</h1>
+                        <p className="text-slate-500 mt-1">斜めに写った書類をまっすぐに整えます</p>
+                    </header>
 
-  function mapPoint(x, y, m) {
-    const w = m[6] * x + m[7] * y + m[8];
-    return {
-      x: (m[0] * x + m[1] * y + m[2]) / w,
-      y: (m[3] * x + m[4] * y + m[5]) / w
-    };
-  }
+                    <main className="flex-1 flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto w-full">
+                        <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                            <div className="flex justify-between items-center mb-5 gap-3">
+                                <h2 className="font-bold text-lg text-blue-600 flex items-center gap-2">
+                                    <i data-lucide="move"></i>範囲を指定
+                                </h2>
+                                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-semibold">
+                                    <i data-lucide="upload"></i>画像を選択
+                                    <input type="file" className="hidden" accept="image/*" onChange={onFileChange} />
+                                </label>
+                            </div>
 
-  const loadSample = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(0, 0, 800, 600);
-    ctx.fillStyle = '#4f46e5';
-    ctx.beginPath();
-    ctx.moveTo(200, 150); ctx.lineTo(650, 100); ctx.lineTo(580, 500); ctx.lineTo(150, 450);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 36px sans-serif';
-    ctx.fillText('SAMPLE DOCUMENT', 220, 310);
-    handleImageLoad(canvas.toDataURL());
-  };
+                            <div ref={containerRef} className="relative flex-1 bg-slate-100 rounded-xl overflow-hidden min-h-[400px] flex items-center justify-center select-none touch-none border border-slate-200">
+                                {!image ? (
+                                    <div className="text-center text-slate-400 p-10">
+                                        <i data-lucide="clipboard" className="mx-auto mb-4 opacity-20" style={{width: 48, height: 48}}></i>
+                                        <p className="font-semibold text-slate-500">画像をここに貼り付け</p>
+                                    </div>
+                                ) : (
+                                    <div className="relative inline-block max-w-full max-h-full">
+                                        <img ref={imgRef} src={image.src} className="max-w-full max-h-[60vh] block object-contain shadow-sm" />
+                                        <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
+                                            <polygon 
+                                                points={points.map(p => {
+                                                    const rect = imgRef.current.getBoundingClientRect();
+                                                    return `${(p.x / imgSize.width) * rect.width},${(p.y / imgSize.height) * rect.height}`;
+                                                }).join(' ')}
+                                                fill="rgba(37, 99, 235, 0.1)" stroke="#2563eb" strokeWidth="2"
+                                            />
+                                        </svg>
+                                        {points.map((p, i) => {
+                                            const rect = imgRef.current.getBoundingClientRect();
+                                            return (
+                                                <div key={i} onMouseDown={(e) => handleStart(e, i)} onTouchStart={(e) => handleStart(e, i)}
+                                                    className="absolute w-10 h-10 -ml-5 -mt-5 flex items-center justify-center cursor-grab active:cursor-grabbing z-20"
+                                                    style={{ left: (p.x / imgSize.width) * rect.width, top: (p.y / imgSize.height) * rect.height }}
+                                                >
+                                                    <div className="w-6 h-6 bg-white border-2 border-blue-600 rounded-full shadow-md flex items-center justify-center">
+                                                        <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-6">
+                                <button onClick={processImage} disabled={!image || isProcessing}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
+                                    <i data-lucide={isProcessing ? "refresh-cw" : "square"} className={isProcessing ? "animate-spin" : ""}></i>
+                                    {isProcessing ? "補正中..." : "長方形に整える"}
+                                </button>
+                            </div>
+                        </div>
 
-  return (
-    <div className="min-h-screen bg-orange-50/30 flex flex-col p-4 font-sans text-slate-800">
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-black text-orange-600 flex items-center justify-center gap-3 tracking-tight">
-          <Sparkles className="w-10 h-10" />
-          台形補正するアプリ
-        </h1>
-        <p className="text-slate-500 mt-2 font-medium">ななめの写真を「シャキーン！」とまっすぐに✨</p>
-      </header>
+                        <div className="flex-1 flex flex-col gap-6">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col flex-1">
+                                <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700">
+                                    <i data-lucide="check-circle"></i>補正結果
+                                </h2>
+                                <div className="flex-1 bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center border-2 border-dashed border-slate-200 relative min-h-[200px]">
+                                    {resultImage ? <img src={resultImage} className="max-w-full max-h-full object-contain" /> : <div className="text-center text-slate-400 text-sm">結果がここに表示されます</div>}
+                                </div>
+                                <button disabled={!resultImage} onClick={() => { const a = document.createElement('a'); a.href = resultImage; a.download = 'fixed.png'; a.click(); }}
+                                    className="mt-4 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 shadow-sm">
+                                    <i data-lucide="download"></i>保存する
+                                </button>
+                                {resultImage && <p className="mt-2 text-[10px] text-slate-400 text-center">※iPhoneは画像を長押しでカメラロールに保存</p>}
+                            </div>
 
-      <main className="flex-1 flex flex-col lg:flex-row gap-8 max-w-6xl mx-auto w-full">
-        {/* Editor Area */}
-        <div className="flex-[2] bg-white rounded-3xl shadow-xl p-6 flex flex-col border border-orange-100">
-          <div className="flex flex-wrap justify-between items-center mb-5 gap-3">
-            <h2 className="font-bold text-xl flex items-center gap-2 text-indigo-700">
-              <Move className="w-6 h-6" />
-              1. カドを合わせる
-            </h2>
-            <div className="flex gap-2">
-              <button 
-                onClick={loadSample}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-sm border border-slate-200 font-bold"
-              >
-                <ImageIcon className="w-4 h-4" />
-                見本で試す
-              </button>
-              <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm shadow-md font-bold">
-                <Upload className="w-4 h-4" />
-                画像を選ぶ
-                <input type="file" className="hidden" accept="image/*" onChange={onFileChange} />
-              </label>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mb-5 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl flex items-center gap-3 text-sm animate-pulse">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          <div 
-            ref={containerRef}
-            className="relative flex-1 bg-slate-100 rounded-2xl overflow-hidden min-h-[450px] flex items-center justify-center select-none touch-none border-4 border-white shadow-inner"
-            style={{ cursor: draggingIdx !== null ? 'grabbing' : 'crosshair' }}
-          >
-            {!image ? (
-              <div className="text-center text-slate-300 p-10 bg-white/50 rounded-full">
-                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100">
-                  <Clipboard className="w-10 h-10 opacity-30" />
+                            <div className="bg-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
+                                <h3 className="font-bold text-sm mb-4 flex items-center gap-2 text-slate-600"><i data-lucide="mouse-pointer-2"></i>使いかた</h3>
+                                <ul className="text-xs space-y-4 text-slate-600">
+                                    <li className="flex gap-3"><span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">1</span>画像を選択、またはコピペ</li>
+                                    <li className="flex gap-3"><span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">2</span>「長方形に整える」を押す</li>
+                                    <li className="flex gap-3"><span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">3</span>青い丸を角にぴったり合わせる</li>
+                                    <li className="flex gap-3"><span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">4</span>「長方形に整える」をもう一度押す</li>
+                                    <li className="flex gap-3 border-t border-slate-200 pt-3"><span className="bg-green-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">5</span>「保存する」をタップ、または画像を長押し</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </main>
                 </div>
-                <p className="text-xl font-black text-slate-400">画像をここに貼り付け！</p>
-                <p className="text-sm mt-2 opacity-70">または、上のボタンから選んでね</p>
-              </div>
-            ) : (
-              <div className="relative inline-block max-w-full max-h-full">
-                <img 
-                  ref={imgRef}
-                  src={image.src} 
-                  alt="Source" 
-                  className="max-w-full max-h-[65vh] block object-contain shadow-xl rounded-sm"
-                />
-                
-                {/* SVG Overlay */}
-                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
-                  <polygon 
-                    points={points.map(p => {
-                      if (!imgRef.current) return "0,0";
-                      const rect = imgRef.current.getBoundingClientRect();
-                      const x = (p.x / imgSize.width) * rect.width;
-                      const y = (p.y / imgSize.height) * rect.height;
-                      return `${x},${y}`;
-                    }).join(' ')}
-                    fill="rgba(249, 115, 22, 0.2)"
-                    stroke="#f97316"
-                    strokeWidth="4"
-                    strokeLinejoin="round"
-                    strokeDasharray="8 4"
-                  />
-                </svg>
+            );
+        };
 
-                {/* Handles */}
-                {points.map((p, i) => {
-                  if (!imgRef.current) return null;
-                  const rect = imgRef.current.getBoundingClientRect();
-                  const x = (p.x / imgSize.width) * rect.width;
-                  const y = (p.y / imgSize.height) * rect.height;
-                  
-                  return (
-                    <div
-                      key={i}
-                      onMouseDown={(e) => handleStart(e, i)}
-                      onTouchStart={(e) => handleStart(e, i)}
-                      className="absolute w-12 h-12 -ml-6 -mt-6 flex items-center justify-center cursor-grab active:cursor-grabbing z-20 group"
-                      style={{ left: x, top: y }}
-                    >
-                      <div className="w-6 h-6 bg-white border-4 border-orange-500 rounded-full shadow-lg group-hover:scale-125 transition-transform flex items-center justify-center">
-                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 flex gap-4">
-            <button
-              onClick={processImage}
-              disabled={!image || isProcessing}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-3 text-xl hover:scale-[1.02] active:scale-95"
-            >
-              {isProcessing ? (
-                <RefreshCw className="w-7 h-7 animate-spin" />
-              ) : (
-                <Square className="w-7 h-7" />
-              )}
-              {isProcessing ? "魔法をかけてます..." : "長方形に整える！"}
-            </button>
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="flex-1 flex flex-col gap-8">
-          {/* Result Card */}
-          <div className="bg-white rounded-3xl shadow-xl p-6 flex flex-col flex-1 border border-green-100">
-            <h2 className="font-bold text-xl mb-5 flex items-center gap-2 text-green-600">
-              <CheckCircle className="w-6 h-6" />
-              2. 完成！
-            </h2>
-            <div className="flex-1 bg-slate-50 rounded-2xl overflow-hidden flex items-center justify-center border-2 border-dashed border-slate-200 relative min-h-[250px] shadow-inner">
-              {resultImage ? (
-                <img src={resultImage} alt="Result" className="max-w-full max-h-full object-contain p-2" />
-              ) : (
-                <div className="text-center text-slate-400 text-sm px-6 font-medium">
-                  <p>左の画面で角を合わせてから</p>
-                  <p className="font-bold text-indigo-500 my-1 text-base">「整える」ボタン</p>
-                  <p>を押すとここに表示されるよ！</p>
-                </div>
-              )}
-            </div>
-            
-            <div className="mt-5">
-              <button
-                disabled={!resultImage}
-                onClick={() => {
-                  const link = document.createElement('a');
-                  link.download = `shaki-n_${Date.now()}.png`;
-                  link.href = resultImage;
-                  link.click();
-                }}
-                className="w-full py-4 px-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all disabled:opacity-50 shadow-md hover:scale-[1.02] active:scale-95"
-              >
-                <Download className="w-6 h-6" />
-                きれいに保存する
-              </button>
-            </div>
-          </div>
-
-          {/* Tips Card */}
-          <div className="bg-gradient-to-br from-amber-400 to-orange-500 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
-            <div className="absolute top-[-10px] right-[-10px] opacity-10 rotate-12">
-              <Sparkles className="w-32 h-32" />
-            </div>
-            <h3 className="font-black text-lg mb-4 flex items-center gap-2">
-              <MousePointer2 className="w-5 h-5" />
-              うまく使うコツ 💡
-            </h3>
-            <ul className="text-sm space-y-4 font-bold">
-              <li className="flex gap-3 items-start">
-                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">01</span>
-                <span>まずは画面を<b>ポチッとクリック</b>してから貼り付けてね！</span>
-              </li>
-              <li className="flex gap-3 items-start">
-                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">02</span>
-                <span>青い点を書類の角に<b>ピッタリ</b>合わせると、魔法みたいに綺麗になります✨</span>
-              </li>
-              <li className="flex gap-3 items-start">
-                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">03</span>
-                <span>スマホでも<b>指一本でカンタン</b>に調整できます。スイスイ動かしてみて👍</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-};
-
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
