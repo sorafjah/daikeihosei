@@ -4,621 +4,762 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>台形補正アプリ</title>
-
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- React & ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- Babel for JSX -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
   <style>
-    body { background-color: #f8fafc; }
-    .touch-none { touch-action: none; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "BIZ UDPGothic", "Hiragino Kaku Gothic ProN", sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      color: #64748b;
+      margin-top: 4px;
+      font-size: 0.9rem;
+    }
+    #scaled-note {
+      display: none;
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: 900px) {
+      main { flex-direction: row; align-items: flex-start; }
+      .panel-left  { flex: 2; }
+      .panel-right { flex: 1; }
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .card-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #2563eb;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-title-gray { color: #475569; }
+
+    /* ===== 画像選択ボタン ===== */
+    .btn-upload {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 8px 18px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    .btn-upload:hover { background: #1d4ed8; }
+
+    /* ===== 編集エリア ===== */
+    #canvas-wrap {
+      position: relative;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+      min-height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #placeholder {
+      text-align: center;
+      color: #94a3b8;
+      padding: 40px 20px;
+    }
+    #placeholder svg { opacity: .4; margin-bottom: 12px; }
+    #placeholder p { font-weight: 600; font-size: 0.9rem; color: #64748b; }
+
+    #source-img {
+      display: none;
+      max-width: 100%;
+      max-height: 60vh;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* SVGオーバーレイ */
+    #overlay-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+    #quad-poly {
+      fill: rgba(37,99,235,.12);
+      stroke: #2563eb;
+      stroke-width: 2;
+    }
+
+    /* ドラッグハンドル */
+    .handle {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      margin-left: -22px;
+      margin-top: -22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      touch-action: none;
+      z-index: 10;
+    }
+    .handle:active { cursor: grabbing; }
+    .handle-dot {
+      width: 24px;
+      height: 24px;
+      background: #fff;
+      border: 2.5px solid #2563eb;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0,0,0,.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .handle-dot::after {
+      content: "";
+      width: 10px;
+      height: 10px;
+      background: #2563eb;
+      border-radius: 50%;
+    }
+
+    /* エラー */
+    #error-box {
+      display: none;
+      margin-top: 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      font-size: 0.85rem;
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+
+    /* 補正ボタン */
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+      box-shadow: 0 2px 8px rgba(37,99,235,.25);
+    }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-success {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px;
+      background: #16a34a;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    .btn-success:hover:not(:disabled) { background: #15803d; }
+    .btn-success:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* 結果エリア */
+    #result-wrap {
+      flex: 1;
+      min-height: 180px;
+      background: #f8fafc;
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin-bottom: 0;
+    }
+    #result-wrap img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    #result-placeholder { color: #94a3b8; font-size: 0.85rem; }
+
+    #iphone-note {
+      display: none;
+      text-align: center;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #475569;
+      margin-top: 10px;
+    }
+
+    /* 使い方 */
+    .how-card {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 18px 20px;
+      margin-top: 16px;
+    }
+    .how-title {
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .how-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .how-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.82rem;
+      color: #475569;
+    }
+    .step-badge {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #2563eb; color: #fff;
+      font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-badge.green { background: #16a34a; }
+    .how-list li .sep {
+      border-top: 1px solid #cbd5e1;
+      padding-top: 10px;
+      width: 100%;
+    }
+
+    /* スピナー */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { display: inline-block; animation: spin .7s linear infinite; }
+
+    /* パネル右側の中身を縦並びに */
+    .panel-right { display: flex; flex-direction: column; gap: 0; }
+    .panel-right .card { display: flex; flex-direction: column; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useRef, useEffect, useCallback } = React;
-
-    // ====== 設定（重い写真対策） ======
-    const MAX_SIDE = 2048;          // 入力画像の最大辺（これ以上は縮小して扱う）
-    const OUT_MAX_SIDE = 2400;      // 出力の最大辺（必要なら抑える）
-    const MIN_AREA_RATIO = 0.0003;  // 4点面積が画像面積に対して小さすぎるとNG
-    const TOUCH_MOVE_OPTS = { passive: false }; // add/remove で同じ参照が必要
-
-    // ====== ちいさいSVGアイコン（Lucide無し） ======
-    const Icon = ({ name, className = "" }) => {
-      const props = {
-        className: `inline-block align-middle ${className}`,
-        viewBox: "0 0 24 24",
-        width: "1em",
-        height: "1em",
-        fill: "none",
-        stroke: "currentColor",
-        strokeWidth: "2",
-        strokeLinecap: "round",
-        strokeLinejoin: "round",
-        "aria-hidden": "true",
-      };
-
-      switch (name) {
-        case "move":
-          return (
-            <svg {...props}>
-              <path d="M12 2v20" />
-              <path d="M2 12h20" />
-              <path d="M12 2l3 3" />
-              <path d="M12 2L9 5" />
-              <path d="M12 22l3-3" />
-              <path d="M12 22l-3-3" />
-              <path d="M2 12l3-3" />
-              <path d="M2 12l3 3" />
-              <path d="M22 12l-3-3" />
-              <path d="M22 12l-3 3" />
-            </svg>
-          );
-        case "upload":
-          return (
-            <svg {...props}>
-              <path d="M12 16V4" />
-              <path d="M8 8l4-4 4 4" />
-              <path d="M4 20h16" />
-            </svg>
-          );
-        case "clipboard":
-          return (
-            <svg {...props}>
-              <rect x="7" y="4" width="10" height="16" rx="2" />
-              <path d="M9 4V3h6v1" />
-            </svg>
-          );
-        case "refresh":
-          return (
-            <svg {...props}>
-              <path d="M21 12a9 9 0 1 1-3-6.7" />
-              <path d="M21 3v6h-6" />
-            </svg>
-          );
-        case "square":
-          return (
-            <svg {...props}>
-              <rect x="5" y="5" width="14" height="14" rx="2" />
-            </svg>
-          );
-        case "check":
-          return (
-            <svg {...props}>
-              <circle cx="12" cy="12" r="9" />
-              <path d="M8 12l2.5 2.5L16 9" />
-            </svg>
-          );
-        case "download":
-          return (
-            <svg {...props}>
-              <path d="M12 3v12" />
-              <path d="M8 11l4 4 4-4" />
-              <path d="M4 21h16" />
-            </svg>
-          );
-        case "pointer":
-          return (
-            <svg {...props}>
-              <path d="M5 3l7 17 2-6 6-2L5 3z" />
-            </svg>
-          );
-        default:
-          return null;
-      }
-    };
-
-    // ====== util ======
-    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-
-    function polygonArea(pts) {
-      let a = 0;
-      for (let i = 0; i < pts.length; i++) {
-        const j = (i + 1) % pts.length;
-        a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
-      }
-      return Math.abs(a) / 2;
-    }
-
-    async function loadAndDownscaleImage(src) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          const w = img.width, h = img.height;
-          const maxSide = Math.max(w, h);
-
-          if (maxSide <= MAX_SIDE) {
-            resolve({ image: img, width: w, height: h, wasScaled: false });
-            return;
-          }
-
-          const scale = MAX_SIDE / maxSide;
-          const nw = Math.round(w * scale);
-          const nh = Math.round(h * scale);
-
-          const c = document.createElement("canvas");
-          c.width = nw; c.height = nh;
-          const ctx = c.getContext("2d");
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(img, 0, 0, nw, nh);
-
-          const scaledImg = new Image();
-          scaledImg.onload = () => resolve({ image: scaledImg, width: nw, height: nh, wasScaled: true });
-          scaledImg.onerror = () => reject(new Error("縮小画像の生成に失敗しました"));
-          scaledImg.src = c.toDataURL("image/jpeg", 0.92);
-        };
-        img.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
-        img.src = src;
-      });
-    }
-
-    function getPerspectiveTransform(src, dst) {
-      const p = [];
-      for (let i = 0; i < 4; i++) {
-        p.push([src[i].x, src[i].y, 1, 0, 0, 0, -dst[i].x * src[i].x, -dst[i].x * src[i].y, dst[i].x]);
-        p.push([0, 0, 0, src[i].x, src[i].y, 1, -dst[i].y * src[i].x, -dst[i].y * src[i].y, dst[i].y]);
-      }
-      const h = solveLinearEquations(p);
-      h.push(1);
-      return { mat: h, inv: invert3x3(h) };
-    }
-
-    function solveLinearEquations(matrix) {
-      const n = 8;
-      for (let i = 0; i < n; i++) {
-        let max = i;
-        for (let j = i + 1; j < n; j++) {
-          if (Math.abs(matrix[j][i]) > Math.abs(matrix[max][i])) max = j;
-        }
-        [matrix[i], matrix[max]] = [matrix[max], matrix[i]];
-        const pivot = matrix[i][i];
-        if (!isFinite(pivot) || Math.abs(pivot) < 1e-12) throw new Error("degenerate");
-        for (let j = i; j <= n; j++) matrix[i][j] /= pivot;
-        for (let j = 0; j < n; j++) {
-          if (i !== j) {
-            const factor = matrix[j][i];
-            for (let k = i; k <= n; k++) matrix[j][k] -= factor * matrix[i][k];
-          }
-        }
-      }
-      return matrix.map(row => row[n]);
-    }
-
-    function invert3x3(m) {
-      const [a, b, c, d, e, f, g, h, i] = m;
-      const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-      if (!isFinite(det) || Math.abs(det) < 1e-10) throw new Error("degenerate");
-      return [
-        (e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
-        (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
-        (d * h - e * g) / det, (g * b - a * h) / det, (a * e - b * d) / det
-      ];
-    }
-
-    function mapPoint(x, y, m) {
-      const w = m[6] * x + m[7] * y + m[8];
-      return {
-        x: (m[0] * x + m[1] * y + m[2]) / w,
-        y: (m[3] * x + m[4] * y + m[5]) / w
-      };
-    }
-
-    function sampleBilinear(srcData, sw, sh, x, y) {
-      const x0 = Math.floor(x), y0 = Math.floor(y);
-      const x1 = x0 + 1, y1 = y0 + 1;
-      const fx = x - x0, fy = y - y0;
-
-      function get(ix, iy) {
-        const cx = clamp(ix, 0, sw - 1);
-        const cy = clamp(iy, 0, sh - 1);
-        const idx = (cy * sw + cx) * 4;
-        return [srcData[idx], srcData[idx + 1], srcData[idx + 2], srcData[idx + 3]];
-      }
-
-      const c00 = get(x0, y0), c10 = get(x1, y0), c01 = get(x0, y1), c11 = get(x1, y1);
-      const out = [0, 0, 0, 0];
-      for (let k = 0; k < 4; k++) {
-        const a = c00[k] * (1 - fx) + c10[k] * fx;
-        const b = c01[k] * (1 - fx) + c11[k] * fx;
-        out[k] = a * (1 - fy) + b * fy;
-      }
-      return out;
-    }
-
-    const App = () => {
-      const [image, setImage] = useState(null);
-      const [imgSize, setImgSize] = useState({ width: 0, height: 0 });
-      const [wasScaled, setWasScaled] = useState(false);
-
-      const [displayRect, setDisplayRect] = useState(null);
-      const [points, setPoints] = useState([]);
-      const [draggingIdx, setDraggingIdx] = useState(null);
-
-      const [resultImage, setResultImage] = useState(null);
-      const [isBusy, setIsBusy] = useState(false);
-      const [error, setError] = useState(null);
-
-      const imgRef = useRef(null);
-
-      const updateDisplayRect = useCallback(() => {
-        if (imgRef.current) setDisplayRect(imgRef.current.getBoundingClientRect());
-      }, []);
-
-      useEffect(() => {
-        window.addEventListener("resize", updateDisplayRect);
-        return () => window.removeEventListener("resize", updateDisplayRect);
-      }, [updateDisplayRect]);
-
-      const initPoints = useCallback((w, h) => {
-        setPoints([
-          { x: w * 0.15, y: h * 0.15 },
-          { x: w * 0.85, y: h * 0.15 },
-          { x: w * 0.85, y: h * 0.85 },
-          { x: w * 0.15, y: h * 0.85 },
-        ]);
-      }, []);
-
-      const handleImageLoad = useCallback(async (src) => {
-        setError(null);
-        setIsBusy(true);
-        setResultImage(null);
-        setDisplayRect(null);
-
-        try {
-          const { image: img, width: w, height: h, wasScaled: scaled } = await loadAndDownscaleImage(src);
-          setImage(img);
-          setImgSize({ width: w, height: h });
-          setWasScaled(scaled);
-          initPoints(w, h);
-        } catch (e) {
-          setError(e?.message || "画像の読み込みに失敗しました。");
-          setImage(null);
-          setImgSize({ width: 0, height: 0 });
-          setWasScaled(false);
-          setPoints([]);
-        } finally {
-          setIsBusy(false);
-        }
-      }, [initPoints]);
-
-      const onFileChange = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (f) => handleImageLoad(f.target.result);
-        reader.readAsDataURL(file);
-      };
-
-      useEffect(() => {
-        const handlePaste = (e) => {
-          if (!e.clipboardData?.items) return;
-          const items = e.clipboardData.items;
-          for (let i = 0; i < items.length; i++) {
-            if (items[i].type && items[i].type.indexOf("image") !== -1) {
-              const blob = items[i].getAsFile();
-              if (!blob) continue;
-              const reader = new FileReader();
-              reader.onload = (f) => handleImageLoad(f.target.result);
-              reader.readAsDataURL(blob);
-              e.preventDefault?.();
-              break;
-            }
-          }
-        };
-        window.addEventListener("paste", handlePaste);
-        return () => window.removeEventListener("paste", handlePaste);
-      }, [handleImageLoad]);
-
-      const handleStart = (e, idx) => {
-        if (e.cancelable) e.preventDefault();
-        updateDisplayRect();
-        setDraggingIdx(idx);
-      };
-
-      const handleMove = useCallback((e) => {
-        if (draggingIdx === null || !image || !displayRect) return;
-
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-        const scaleX = imgSize.width / displayRect.width;
-        const scaleY = imgSize.height / displayRect.height;
-
-        const x = (clientX - displayRect.left) * scaleX;
-        const y = (clientY - displayRect.top) * scaleY;
-
-        setPoints(prev => {
-          const next = [...prev];
-          next[draggingIdx] = { x: clamp(x, 0, imgSize.width), y: clamp(y, 0, imgSize.height) };
-          return next;
-        });
-      }, [draggingIdx, image, displayRect, imgSize]);
-
-      const handleEnd = () => setDraggingIdx(null);
-
-      useEffect(() => {
-        if (draggingIdx !== null) {
-          window.addEventListener("mousemove", handleMove);
-          window.addEventListener("mouseup", handleEnd);
-          window.addEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS);
-          window.addEventListener("touchend", handleEnd);
-        }
-        return () => {
-          window.removeEventListener("mousemove", handleMove);
-          window.removeEventListener("mouseup", handleEnd);
-          window.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTS);
-          window.removeEventListener("touchend", handleEnd);
-        };
-      }, [draggingIdx, handleMove]);
-
-      const validatePoints = useCallback(() => {
-        if (!image || points.length !== 4) return { ok: false, message: "画像がありません。" };
-
-        const area = polygonArea(points);
-        const imgArea = imgSize.width * imgSize.height;
-        if (!isFinite(area) || area / imgArea < MIN_AREA_RATIO) {
-          return { ok: false, message: "四角形が小さすぎます。青い点を四隅に広げてください。" };
-        }
-
-        for (let i = 0; i < 4; i++) {
-          for (let j = i + 1; j < 4; j++) {
-            const dx = points[i].x - points[j].x;
-            const dy = points[i].y - points[j].y;
-            if (dx*dx + dy*dy < 16) {
-              return { ok: false, message: "点が近すぎます。点が重ならないように動かしてください。" };
-            }
-          }
-        }
-        return { ok: true, message: "" };
-      }, [image, points, imgSize]);
-
-      const processImage = async () => {
-        if (!image) return;
-        const v = validatePoints();
-        if (!v.ok) { setError(v.message); return; }
-
-        setIsBusy(true);
-        setError(null);
-
-        await new Promise(r => setTimeout(r, 30));
-
-        try {
-          const w1 = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
-          const w2 = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
-          const h1 = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
-          const h2 = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
-
-          let destW = Math.max(1, Math.round(Math.max(w1, w2)));
-          let destH = Math.max(1, Math.round(Math.max(h1, h2)));
-
-          const outMaxSide = Math.max(destW, destH);
-          if (outMaxSide > OUT_MAX_SIDE) {
-            const s = OUT_MAX_SIDE / outMaxSide;
-            destW = Math.round(destW * s);
-            destH = Math.round(destH * s);
-          }
-
-          const tempCanvas = document.createElement("canvas");
-          tempCanvas.width = imgSize.width;
-          tempCanvas.height = imgSize.height;
-          const tCtx = tempCanvas.getContext("2d");
-          tCtx.drawImage(image, 0, 0);
-
-          const srcImg = tCtx.getImageData(0, 0, imgSize.width, imgSize.height);
-          const srcData = srcImg.data;
-
-          const transform = getPerspectiveTransform(
-            points,
-            [{x:0,y:0}, {x:destW,y:0}, {x:destW,y:destH}, {x:0,y:destH}]
-          );
-
-          const canvas = document.createElement("canvas");
-          canvas.width = destW;
-          canvas.height = destH;
-          const ctx = canvas.getContext("2d");
-          const outImg = ctx.createImageData(destW, destH);
-          const d = outImg.data;
-
-          for (let y = 0; y < destH; y++) {
-            for (let x = 0; x < destW; x++) {
-              const sp = mapPoint(x, y, transform.inv);
-              const sx = sp.x, sy = sp.y;
-
-              if (sx >= 0 && sx < imgSize.width && sy >= 0 && sy < imgSize.height) {
-                const [r,g,b,a] = sampleBilinear(srcData, imgSize.width, imgSize.height, sx, sy);
-                const outIdx = (y * destW + x) * 4;
-                d[outIdx] = r; d[outIdx+1] = g; d[outIdx+2] = b; d[outIdx+3] = a;
-              }
-            }
-          }
-
-          ctx.putImageData(outImg, 0, 0);
-          setResultImage(canvas.toDataURL("image/png"));
-        } catch (err) {
-          const msg = (err && err.message === "degenerate")
-            ? "補正できませんでした（点の位置が不適切です）。青い点を四隅に広げてください。"
-            : "補正できませんでした。";
-          setError(msg);
-        } finally {
-          setIsBusy(false);
-        }
-      };
-
-      const downloadResult = () => {
-        if (!resultImage) return;
-        const a = document.createElement("a");
-        a.href = resultImage;
-        a.download = "fixed.png";
-        a.click();
-      };
-
-      return (
-        <div className="min-h-screen flex flex-col p-4 font-sans text-slate-800">
-          <header className="mb-6 text-center">
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">台形補正アプリ</h1>
-            <p className="text-slate-500 mt-1">斜めに写った書類をまっすぐに整えます</p>
-            {wasScaled && (
-              <p className="mt-2 text-xs text-slate-500">
-                ※重くならないように画像を縮小して処理しています（最大辺 {MAX_SIDE}px）
-              </p>
-            )}
-          </header>
-
-          <main className="flex-1 flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto w-full">
-            <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-              <div className="flex justify-between items-center mb-5 gap-3">
-                <h2 className="font-bold text-lg text-blue-600 flex items-center gap-2">
-                  <Icon name="move" className="w-5 h-5" /> 範囲を指定
-                </h2>
-                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-semibold">
-                  <Icon name="upload" className="w-4 h-4" /> 画像を選択
-                  <input type="file" className="hidden" accept="image/*" onChange={onFileChange} />
-                </label>
-              </div>
-
-              <div className="relative flex-1 bg-slate-100 rounded-xl overflow-hidden min-h-[400px] flex items-center justify-center select-none border border-slate-200 touch-none">
-                {!image ? (
-                  <div className="text-center text-slate-400 p-10">
-                    <div className="mx-auto mb-4 opacity-25 text-slate-500" style={{ fontSize: 48 }}>
-                      <Icon name="clipboard" className="w-12 h-12" />
-                    </div>
-                    <p className="font-semibold text-slate-500">画像をここに貼り付け（Ctrl+V など）</p>
-                  </div>
-                ) : (
-                  <div className="relative inline-block max-w-full max-h-full">
-                    <img
-                      ref={imgRef}
-                      src={image.src}
-                      onLoad={updateDisplayRect}
-                      className="max-w-full max-h-[60vh] block object-contain shadow-sm"
-                      alt="source"
-                    />
-
-                    {displayRect && (
-                      <>
-                        <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible">
-                          <polygon
-                            points={points.map(p => `${(p.x / imgSize.width) * displayRect.width},${(p.y / imgSize.height) * displayRect.height}`).join(" ")}
-                            fill="rgba(37, 99, 235, 0.12)"
-                            stroke="#2563eb"
-                            strokeWidth="2"
-                          />
-                        </svg>
-
-                        {points.map((p, i) => (
-                          <div
-                            key={i}
-                            onMouseDown={(e) => handleStart(e, i)}
-                            onTouchStart={(e) => handleStart(e, i)}
-                            className="absolute w-10 h-10 -ml-5 -mt-5 flex items-center justify-center cursor-grab active:cursor-grabbing z-20"
-                            style={{
-                              left: (p.x / imgSize.width) * displayRect.width,
-                              top: (p.y / imgSize.height) * displayRect.height,
-                              touchAction: "none",
-                            }}
-                            aria-label={`handle-${i}`}
-                          >
-                            <div className="w-6 h-6 bg-white border-2 border-blue-600 rounded-full shadow-md flex items-center justify-center">
-                              <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {error && (
-                <div className="mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3">
-                  {error}
-                </div>
-              )}
-
-              <div className="mt-6">
-                <button
-                  onClick={processImage}
-                  disabled={!image || isBusy}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-lg"
-                >
-                  {isBusy
-                    ? <span className="inline-flex items-center gap-2"><span className="animate-spin"><Icon name="refresh" className="w-5 h-5" /></span> 補正中...</span>
-                    : <span className="inline-flex items-center gap-2"><Icon name="square" className="w-5 h-5" /> この範囲で長方形に整える</span>
-                  }
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 flex flex-col gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col flex-1">
-                <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700">
-                  <Icon name="check" className="w-5 h-5" /> 補正結果
-                </h2>
-
-                <div className="flex-1 bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center border-2 border-dashed border-slate-200 relative min-h-[200px]">
-                  {resultImage
-                    ? <img src={resultImage} className="max-w-full max-h-full object-contain" alt="result" />
-                    : <div className="text-center text-slate-400 text-sm">結果がここに表示されます</div>
-                  }
-                </div>
-
-                <button
-                  disabled={!resultImage}
-                  onClick={downloadResult}
-                  className="mt-4 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 shadow-sm"
-                >
-                  <Icon name="download" className="w-5 h-5" /> 保存する
-                </button>
-
-                {resultImage && (
-                  <p className="mt-3 text-sm font-semibold text-slate-700 text-center">
-                    ※iPhoneは画像を長押しでカメラロールに保存
-                  </p>
-                )}
-              </div>
-
-              <div className="bg-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-sm mb-4 flex items-center gap-2 text-slate-600">
-                  <Icon name="pointer" className="w-4 h-4" /> 使いかた
-                </h3>
-                <ul className="text-xs space-y-4 text-slate-600">
-                  <li className="flex gap-3">
-                    <span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">1</span>
-                    画像を選択、またはコピペ
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">2</span>
-                    青い丸を紙の四隅に合わせる
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="bg-blue-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">3</span>
-                    「この範囲で長方形に整える」を押す
-                  </li>
-                  <li className="flex gap-3 border-t border-slate-200 pt-3">
-                    <span className="bg-green-600 text-white w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px]">4</span>
-                    「保存する」を押す（iPhoneは長押しで）
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </main>
+<header>
+  <h1>台形補正アプリ</h1>
+  <p>斜めに写った書類をまっすぐに整えます</p>
+  <p id="scaled-note"></p>
+</header>
+
+<main>
+  <!-- 左パネル：編集 -->
+  <div class="panel-left">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20"/><path d="M2 12h20"/><path d="M12 2l3 3"/><path d="M12 2L9 5"/><path d="M12 22l3-3"/><path d="M12 22l-3-3"/><path d="M2 12l3-3"/><path d="M2 12l3 3"/><path d="M22 12l-3-3"/><path d="M22 12l-3 3"/></svg>
+          範囲を指定
+        </span>
+        <label class="btn-upload">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 20h16"/></svg>
+          画像を選択
+          <input id="file-input" type="file" accept="image/*" style="display:none" />
+        </label>
+      </div>
+
+      <div id="canvas-wrap">
+        <div id="placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M9 4V3h6v1"/></svg>
+          <p>画像をここに貼り付け（Ctrl+V など）</p>
         </div>
-      );
-    };
+        <img id="source-img" alt="source" />
+        <svg id="overlay-svg" style="display:none">
+          <polygon id="quad-poly" />
+        </svg>
+        <div id="handle-0" class="handle" style="display:none"><div class="handle-dot"></div></div>
+        <div id="handle-1" class="handle" style="display:none"><div class="handle-dot"></div></div>
+        <div id="handle-2" class="handle" style="display:none"><div class="handle-dot"></div></div>
+        <div id="handle-3" class="handle" style="display:none"><div class="handle-dot"></div></div>
+      </div>
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
-  </script>
+      <div id="error-box"></div>
+
+      <button id="btn-process" class="btn-primary" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+        この範囲で長方形に整える
+      </button>
+    </div>
+  </div>
+
+  <!-- 右パネル：結果 + 使い方 -->
+  <div class="panel-right">
+    <div class="card">
+      <div class="card-header" style="margin-bottom:12px">
+        <span class="card-title card-title-gray">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+          補正結果
+        </span>
+      </div>
+      <div id="result-wrap" style="min-height:200px">
+        <span id="result-placeholder">結果がここに表示されます</span>
+      </div>
+      <button id="btn-download" class="btn-success" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg>
+        保存する
+      </button>
+      <p id="iphone-note">※iPhoneは画像を長押しでカメラロールに保存</p>
+    </div>
+
+    <div class="how-card">
+      <div class="how-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l7 17 2-6 6-2L5 3z"/></svg>
+        使いかた
+      </div>
+      <ul class="how-list">
+        <li><span class="step-badge">1</span>画像を選択、またはコピペ</li>
+        <li><span class="step-badge">2</span>青い丸を紙の四隅に合わせる</li>
+        <li><span class="step-badge">3</span>「この範囲で長方形に整える」を押す</li>
+        <li style="border-top:1px solid #cbd5e1; padding-top:10px">
+          <span class="step-badge green">4</span>「保存する」を押す（iPhoneは長押しで）
+        </li>
+      </ul>
+    </div>
+  </div>
+</main>
+
+<script>
+// ===== 定数 =====
+const MAX_SIDE     = 2048;
+const OUT_MAX_SIDE = 2400;
+const MIN_AREA_RATIO = 0.0003;
+
+// ===== 状態 =====
+let imageObj   = null;   // HTMLImageElement（縮小済み）
+let imgW = 0, imgH = 0;
+let points = [];         // [{x,y}, ...] 画像座標系（4点）
+let draggingIdx = null;
+let displayRect = null;  // canvas-wrap内のimgのBoundingClientRect
+let resultDataURL = null;
+
+// ===== DOM =====
+const fileInput    = document.getElementById("file-input");
+const canvasWrap   = document.getElementById("canvas-wrap");
+const placeholder  = document.getElementById("placeholder");
+const sourceImg    = document.getElementById("source-img");
+const overlaySVG   = document.getElementById("overlay-svg");
+const quadPoly     = document.getElementById("quad-poly");
+const handles      = [0,1,2,3].map(i => document.getElementById(`handle-${i}`));
+const errorBox     = document.getElementById("error-box");
+const btnProcess   = document.getElementById("btn-process");
+const resultWrap   = document.getElementById("result-wrap");
+const resultPhlder = document.getElementById("result-placeholder");
+const btnDownload  = document.getElementById("btn-download");
+const iphoneNote   = document.getElementById("iphone-note");
+const scaledNote   = document.getElementById("scaled-note");
+
+// ===== ユーティリティ =====
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function polygonArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = msg ? "block" : "none";
+}
+
+function setProcessBusy(busy) {
+  if (busy) {
+    btnProcess.disabled = true;
+    btnProcess.innerHTML = `<span class="spin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></span> 補正中...`;
+  } else {
+    btnProcess.disabled = !imageObj;
+    btnProcess.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> この範囲で長方形に整える`;
+  }
+}
+
+// ===== 画像読み込み・縮小 =====
+function loadAndDownscale(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      if (Math.max(w, h) <= MAX_SIDE) {
+        resolve({ image: img, width: w, height: h, wasScaled: false });
+        return;
+      }
+      const scale = MAX_SIDE / Math.max(w, h);
+      const nw = Math.round(w * scale), nh = Math.round(h * scale);
+      const c = document.createElement("canvas");
+      c.width = nw; c.height = nh;
+      const ctx = c.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, nw, nh);
+      const img2 = new Image();
+      img2.onload = () => resolve({ image: img2, width: nw, height: nh, wasScaled: true });
+      img2.onerror = () => reject(new Error("縮小に失敗しました"));
+      img2.src = c.toDataURL("image/jpeg", 0.92);
+    };
+    img.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
+    img.src = src;
+  });
+}
+
+async function handleImageSrc(src) {
+  showError("");
+  setProcessBusy(true);
+  resultDataURL = null;
+  btnDownload.disabled = true;
+  iphoneNote.style.display = "none";
+  resultWrap.innerHTML = `<span id="result-placeholder">結果がここに表示されます</span>`;
+
+  try {
+    const { image, width, height, wasScaled } = await loadAndDownscale(src);
+    imageObj = image;
+    imgW = width; imgH = height;
+
+    // 表示
+    sourceImg.src = image.src;
+    sourceImg.style.display = "block";
+    placeholder.style.display = "none";
+    overlaySVG.style.display = "";
+
+    // ちょっと待ってからBoundingRect取得
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    updateDisplayRect();
+
+    // 初期4点
+    points = [
+      { x: imgW * 0.15, y: imgH * 0.15 },
+      { x: imgW * 0.85, y: imgH * 0.15 },
+      { x: imgW * 0.85, y: imgH * 0.85 },
+      { x: imgW * 0.15, y: imgH * 0.85 },
+    ];
+    handles.forEach(h => h.style.display = "flex");
+    renderOverlay();
+
+    scaledNote.style.display = wasScaled ? "block" : "none";
+    if (wasScaled) scaledNote.textContent = `※重くならないように画像を縮小して処理しています（最大辺 ${MAX_SIDE}px）`;
+
+    btnProcess.disabled = false;
+  } catch (e) {
+    showError(e.message || "読み込みに失敗しました");
+    imageObj = null;
+  } finally {
+    setProcessBusy(false);
+  }
+}
+
+// ===== オーバーレイ描画 =====
+function updateDisplayRect() {
+  displayRect = sourceImg.getBoundingClientRect();
+}
+
+function imgToDisplay(p) {
+  if (!displayRect) return { x: 0, y: 0 };
+  // canvas-wrap内のimg左上からのオフセット
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  const ox = displayRect.left - wrapRect.left;
+  const oy = displayRect.top  - wrapRect.top;
+  return {
+    x: ox + (p.x / imgW) * displayRect.width,
+    y: oy + (p.y / imgH) * displayRect.height,
+  };
+}
+
+function renderOverlay() {
+  if (!displayRect || points.length !== 4) return;
+
+  const pts = points.map(imgToDisplay);
+
+  // SVGポリゴン
+  quadPoly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+
+  // ハンドル
+  handles.forEach((h, i) => {
+    h.style.left = pts[i].x + "px";
+    h.style.top  = pts[i].y + "px";
+  });
+}
+
+// ===== ドラッグ =====
+function getClient(e) {
+  if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
+handles.forEach((h, i) => {
+  h.addEventListener("mousedown",  e => startDrag(e, i), { passive: false });
+  h.addEventListener("touchstart", e => startDrag(e, i), { passive: false });
+});
+
+function startDrag(e, i) {
+  if (e.cancelable) e.preventDefault();
+  updateDisplayRect();
+  draggingIdx = i;
+}
+
+function onMove(e) {
+  if (draggingIdx === null || !imageObj || !displayRect) return;
+  if (e.cancelable) e.preventDefault();
+
+  const { x: cx, y: cy } = getClient(e);
+  const scaleX = imgW / displayRect.width;
+  const scaleY = imgH / displayRect.height;
+  const px = (cx - displayRect.left) * scaleX;
+  const py = (cy - displayRect.top)  * scaleY;
+
+  points[draggingIdx] = { x: clamp(px, 0, imgW), y: clamp(py, 0, imgH) };
+  renderOverlay();
+}
+
+function onEnd() { draggingIdx = null; }
+
+window.addEventListener("mousemove",  onMove);
+window.addEventListener("mouseup",    onEnd);
+window.addEventListener("touchmove",  onMove, { passive: false });
+window.addEventListener("touchend",   onEnd);
+window.addEventListener("resize", () => { updateDisplayRect(); renderOverlay(); });
+
+// ===== 入力 =====
+fileInput.addEventListener("change", e => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = f => handleImageSrc(f.target.result);
+  reader.readAsDataURL(file);
+  fileInput.value = "";
+});
+
+window.addEventListener("paste", e => {
+  if (!e.clipboardData?.items) return;
+  for (const item of e.clipboardData.items) {
+    if (item.type?.startsWith("image")) {
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const reader = new FileReader();
+      reader.onload = f => handleImageSrc(f.target.result);
+      reader.readAsDataURL(blob);
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+// ===== パースペクティブ変換 =====
+function solveLinear(matrix) {
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    let max = i;
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(matrix[j][i]) > Math.abs(matrix[max][i])) max = j;
+    }
+    [matrix[i], matrix[max]] = [matrix[max], matrix[i]];
+    const piv = matrix[i][i];
+    if (!isFinite(piv) || Math.abs(piv) < 1e-12) throw new Error("degenerate");
+    for (let j = i; j <= n; j++) matrix[i][j] /= piv;
+    for (let j = 0; j < n; j++) {
+      if (i !== j) {
+        const f = matrix[j][i];
+        for (let k = i; k <= n; k++) matrix[j][k] -= f * matrix[i][k];
+      }
+    }
+  }
+  return matrix.map(r => r[n]);
+}
+
+function invert3x3(m) {
+  const [a,b,c,d,e,f,g,h,ii] = m;
+  const det = a*(e*ii-f*h) - b*(d*ii-f*g) + c*(d*h-e*g);
+  if (!isFinite(det) || Math.abs(det) < 1e-10) throw new Error("degenerate");
+  return [
+    (e*ii-f*h)/det, (c*h-b*ii)/det, (b*f-c*e)/det,
+    (f*g-d*ii)/det, (a*ii-c*g)/det, (c*d-a*f)/det,
+    (d*h-e*g)/det,  (g*b-a*h)/det,  (a*e-b*d)/det,
+  ];
+}
+
+function getPerspTransform(src, dst) {
+  const p = [];
+  for (let i = 0; i < 4; i++) {
+    p.push([src[i].x, src[i].y, 1, 0, 0, 0, -dst[i].x*src[i].x, -dst[i].x*src[i].y, dst[i].x]);
+    p.push([0, 0, 0, src[i].x, src[i].y, 1, -dst[i].y*src[i].x, -dst[i].y*src[i].y, dst[i].y]);
+  }
+  const h = solveLinear(p);
+  h.push(1);
+  return invert3x3(h);
+}
+
+function mapPoint(x, y, inv) {
+  const w = inv[6]*x + inv[7]*y + inv[8];
+  return { x: (inv[0]*x + inv[1]*y + inv[2])/w, y: (inv[3]*x + inv[4]*y + inv[5])/w };
+}
+
+function sampleBilinear(data, sw, sh, x, y) {
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const fx = x - x0, fy = y - y0;
+  const get = (ix, iy) => {
+    const cx = clamp(ix, 0, sw-1), cy = clamp(iy, 0, sh-1);
+    const idx = (cy*sw + cx)*4;
+    return [data[idx], data[idx+1], data[idx+2], data[idx+3]];
+  };
+  const c00 = get(x0, y0), c10 = get(x0+1, y0), c01 = get(x0, y0+1), c11 = get(x0+1, y0+1);
+  return [0,1,2,3].map(k => {
+    const a = c00[k]*(1-fx) + c10[k]*fx;
+    const b = c01[k]*(1-fx) + c11[k]*fx;
+    return a*(1-fy) + b*fy;
+  });
+}
+
+// ===== 補正処理 =====
+btnProcess.addEventListener("click", async () => {
+  if (!imageObj) return;
+  showError("");
+
+  // バリデーション
+  const area = polygonArea(points);
+  if (!isFinite(area) || area / (imgW * imgH) < MIN_AREA_RATIO) {
+    showError("四角形が小さすぎます。青い点を四隅に広げてください。"); return;
+  }
+  for (let i = 0; i < 4; i++) {
+    for (let j = i+1; j < 4; j++) {
+      const dx = points[i].x - points[j].x, dy = points[i].y - points[j].y;
+      if (dx*dx + dy*dy < 16) { showError("点が近すぎます。点が重ならないように動かしてください。"); return; }
+    }
+  }
+
+  setProcessBusy(true);
+  await new Promise(r => setTimeout(r, 30));
+
+  try {
+    const w1 = Math.hypot(points[1].x-points[0].x, points[1].y-points[0].y);
+    const w2 = Math.hypot(points[2].x-points[3].x, points[2].y-points[3].y);
+    const h1 = Math.hypot(points[3].x-points[0].x, points[3].y-points[0].y);
+    const h2 = Math.hypot(points[2].x-points[1].x, points[2].y-points[1].y);
+
+    let dW = Math.max(1, Math.round(Math.max(w1, w2)));
+    let dH = Math.max(1, Math.round(Math.max(h1, h2)));
+    const outMax = Math.max(dW, dH);
+    if (outMax > OUT_MAX_SIDE) {
+      const s = OUT_MAX_SIDE / outMax;
+      dW = Math.round(dW * s); dH = Math.round(dH * s);
+    }
+
+    const tmp = document.createElement("canvas");
+    tmp.width = imgW; tmp.height = imgH;
+    tmp.getContext("2d").drawImage(imageObj, 0, 0);
+    const srcData = tmp.getContext("2d").getImageData(0, 0, imgW, imgH).data;
+
+    const dst = [{x:0,y:0},{x:dW,y:0},{x:dW,y:dH},{x:0,y:dH}];
+    const inv = getPerspTransform(points, dst);
+
+    const out = document.createElement("canvas");
+    out.width = dW; out.height = dH;
+    const ctx = out.getContext("2d");
+    const imgData = ctx.createImageData(dW, dH);
+    const d = imgData.data;
+
+    for (let y = 0; y < dH; y++) {
+      for (let x = 0; x < dW; x++) {
+        const sp = mapPoint(x, y, inv);
+        if (sp.x >= 0 && sp.x < imgW && sp.y >= 0 && sp.y < imgH) {
+          const [r,g,b,a] = sampleBilinear(srcData, imgW, imgH, sp.x, sp.y);
+          const idx = (y*dW + x)*4;
+          d[idx]=r; d[idx+1]=g; d[idx+2]=b; d[idx+3]=a;
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    resultDataURL = out.toDataURL("image/png");
+    resultWrap.innerHTML = `<img src="${resultDataURL}" alt="補正結果" style="max-width:100%;max-height:360px;object-fit:contain" />`;
+    btnDownload.disabled = false;
+    iphoneNote.style.display = "block";
+  } catch (err) {
+    showError(err?.message === "degenerate"
+      ? "補正できませんでした（点の位置が不適切です）。青い点を四隅に広げてください。"
+      : "補正できませんでした。");
+  } finally {
+    setProcessBusy(false);
+  }
+});
+
+// ===== 保存 =====
+btnDownload.addEventListener("click", () => {
+  if (!resultDataURL) return;
+  const a = document.createElement("a");
+  a.href = resultDataURL;
+  a.download = "fixed.png";
+  a.click();
+});
+</script>
 </body>
 </html>
